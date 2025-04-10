@@ -17,7 +17,7 @@ from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
 
 # Importer nos modules
-from utils.data_preprocessing import load_and_prepare_data, visualize_batch, analyze_dataset_distribution
+from data.data_preprocessing import load_and_prepare_data, visualize_batch, analyze_dataset_distribution
 from models.model_architecture import get_model
 
 def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler, 
