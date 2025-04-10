@@ -7,10 +7,11 @@ pour l'entraînement et l'évaluation du modèle.
 import os
 import torch
 from torchvision import transforms, datasets
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Dataset
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
+import glob
 
 # Définition des transformations pour les images
 def get_train_transforms(img_size=224):
@@ -108,6 +109,104 @@ def load_and_prepare_data(data_dir, batch_size=32, img_size=224, val_split=0.2, 
     )
     
     return train_loader, val_loader, test_loader, class_names
+
+def load_and_prepare_two_stage_data(plum_data_dir, non_plum_data_dir, batch_size=32, img_size=224, val_split=0.2, test_split=0.1, num_workers=4):
+    """
+    Charge et prépare les données pour un modèle en deux étapes (détection de prune puis classification).
+    
+    Args:
+        plum_data_dir (str): Chemin vers le répertoire contenant les images de prunes
+        non_plum_data_dir (str): Chemin vers le répertoire contenant les images qui ne sont pas des prunes
+        batch_size (int): Taille des lots pour le DataLoader
+        img_size (int): Taille des images (carré)
+        val_split (float): Proportion des données à utiliser pour la validation
+        test_split (float): Proportion des données à utiliser pour le test
+        num_workers (int): Nombre de workers pour le chargement parallèle des données
+        
+    Returns:
+        tuple: (detection_loaders, classification_loaders)
+        où detection_loaders = (train_loader, val_loader, test_loader, class_names) pour la détection
+        et classification_loaders = (train_loader, val_loader, test_loader, class_names) pour la classification
+    """
+    # Vérifier si les répertoires existent
+    if not os.path.exists(plum_data_dir):
+        raise FileNotFoundError(f"Le répertoire {plum_data_dir} n'existe pas")
+    if not os.path.exists(non_plum_data_dir):
+        raise FileNotFoundError(f"Le répertoire {non_plum_data_dir} n'existe pas")
+    
+    # Créer un dataset temporaire pour la détection (prune vs non-prune)
+    detection_data_dir = "/tmp/detection_data"
+    os.makedirs(detection_data_dir, exist_ok=True)
+    os.makedirs(os.path.join(detection_data_dir, "plum"), exist_ok=True)
+    os.makedirs(os.path.join(detection_data_dir, "non_plum"), exist_ok=True)
+    
+    # Copier quelques images pour la détection
+    for plum_class in os.listdir(plum_data_dir):
+        plum_class_dir = os.path.join(plum_data_dir, plum_class)
+        if os.path.isdir(plum_class_dir):
+            for img_file in os.listdir(plum_class_dir)[:100]:  # Limiter à 100 images par classe
+                img_path = os.path.join(plum_class_dir, img_file)
+                if os.path.isfile(img_path):
+                    img = Image.open(img_path)
+                    img.save(os.path.join(detection_data_dir, "plum", f"{plum_class}_{img_file}"))
+    
+    for non_plum_class in os.listdir(non_plum_data_dir):
+        non_plum_class_dir = os.path.join(non_plum_data_dir, non_plum_class)
+        if os.path.isdir(non_plum_class_dir):
+            for img_file in os.listdir(non_plum_class_dir)[:100]:  # Limiter à 100 images par classe
+                img_path = os.path.join(non_plum_class_dir, img_file)
+                if os.path.isfile(img_path):
+                    img = Image.open(img_path)
+                    img.save(os.path.join(detection_data_dir, "non_plum", f"{non_plum_class}_{img_file}"))
+    
+    # Charger les données pour la détection
+    detection_loaders = load_and_prepare_data(
+        detection_data_dir, 
+        batch_size=batch_size, 
+        img_size=img_size,
+        val_split=val_split,
+        test_split=test_split,
+        num_workers=num_workers
+    )
+    
+    # Charger les données pour la classification
+    classification_loaders = load_and_prepare_data(
+        plum_data_dir, 
+        batch_size=batch_size, 
+        img_size=img_size,
+        val_split=val_split,
+        test_split=test_split,
+        num_workers=num_workers
+    )
+    
+    return detection_loaders, classification_loaders
+
+class NonPlumDataset(Dataset):
+    """
+    Dataset pour les images qui ne sont pas des prunes.
+    Utilisé pour créer un dataset équilibré pour la détection.
+    """
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.image_paths = []
+        
+        # Récupérer tous les fichiers image
+        for ext in ['*.jpg', '*.jpeg', '*.png', '*.bmp']:
+            self.image_paths.extend(glob.glob(os.path.join(root_dir, '**', ext), recursive=True))
+        
+    def __len__(self):
+        return len(self.image_paths)
+    
+    def __getitem__(self, idx):
+        img_path = self.image_paths[idx]
+        image = Image.open(img_path).convert('RGB')
+        
+        if self.transform:
+            image = self.transform(image)
+        
+        # Classe 1 = non-prune
+        return image, 1
 
 def visualize_batch(dataloader, class_names, num_images=8):
     """

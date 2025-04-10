@@ -1,6 +1,6 @@
 """
-Script principal d'entraînement pour le classificateur de prunes.
-Ce script gère l'entraînement, la validation et l'évaluation du modèle.
+Script d'entraînement pour le modèle en deux étapes (détection puis classification).
+Ce script gère l'entraînement, la validation et l'évaluation des deux modèles.
 """
 
 import os
@@ -17,11 +17,13 @@ from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
 
 # Importer nos modules
-from data.data_preprocessing import load_and_prepare_data, visualize_batch, analyze_dataset_distribution
-from models.model_architecture import get_model
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from data.data_preprocessing import load_and_prepare_two_stage_data, visualize_batch
+from models.model_architecture import get_model, get_two_stage_model
 
 def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler, 
-                device, num_epochs=25, early_stopping_patience=7, save_dir='models'):
+                device, num_epochs=25, early_stopping_patience=7, save_dir='models', model_name="model"):
     """
     Entraîne le modèle et sauvegarde le meilleur modèle.
     
@@ -36,6 +38,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
         num_epochs (int): Nombre d'époques
         early_stopping_patience (int): Nombre d'époques sans amélioration avant d'arrêter
         save_dir (str): Répertoire où sauvegarder les modèles
+        model_name (str): Préfixe pour les noms de fichiers sauvegardés
         
     Returns:
         dict: Historique d'entraînement
@@ -140,7 +143,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
         if epoch_val_loss < best_val_loss:
             print(f"Amélioration de la perte de validation de {best_val_loss:.4f} à {epoch_val_loss:.4f}. Sauvegarde du modèle...")
             best_val_loss = epoch_val_loss
-            torch.save(model.state_dict(), os.path.join(save_dir, 'best_model_loss.pth'))
+            torch.save(model.state_dict(), os.path.join(save_dir, f'{model_name}_best_loss.pth'))
             early_stopping_counter = 0
         else:
             early_stopping_counter += 1
@@ -149,7 +152,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
         if epoch_val_acc > best_val_acc:
             print(f"Amélioration de l'accuracy de validation de {best_val_acc:.4f} à {epoch_val_acc:.4f}. Sauvegarde du modèle...")
             best_val_acc = epoch_val_acc
-            torch.save(model.state_dict(), os.path.join(save_dir, 'best_model_acc.pth'))
+            torch.save(model.state_dict(), os.path.join(save_dir, f'{model_name}_best_acc.pth'))
         
         # Early stopping
         if early_stopping_counter >= early_stopping_patience:
@@ -165,15 +168,15 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
     print(f"Meilleure accuracy de validation: {best_val_acc:.4f}")
     
     # Sauvegarder le dernier modèle
-    torch.save(model.state_dict(), os.path.join(save_dir, 'last_model.pth'))
+    torch.save(model.state_dict(), os.path.join(save_dir, f'{model_name}_last.pth'))
     
     # Sauvegarder l'historique
-    with open(os.path.join(save_dir, 'training_history.json'), 'w') as f:
+    with open(os.path.join(save_dir, f'{model_name}_history.json'), 'w') as f:
         json.dump(history, f)
     
     return history
 
-def evaluate_model(model, test_loader, criterion, device, class_names, save_dir='models'):
+def evaluate_model(model, test_loader, criterion, device, class_names, save_dir='models', model_name="model"):
     """
     Évalue le modèle sur l'ensemble de test et génère des visualisations.
     
@@ -184,6 +187,7 @@ def evaluate_model(model, test_loader, criterion, device, class_names, save_dir=
         device: Device sur lequel évaluer (cuda ou cpu)
         class_names (list): Liste des noms de classes
         save_dir (str): Répertoire où sauvegarder les résultats
+        model_name (str): Préfixe pour les noms de fichiers sauvegardés
         
     Returns:
         dict: Métriques d'évaluation
@@ -234,14 +238,14 @@ def evaluate_model(model, test_loader, criterion, device, class_names, save_dir=
     plt.xlabel('Prédiction')
     plt.ylabel('Vérité')
     plt.title('Matrice de confusion')
-    plt.savefig(os.path.join(save_dir, 'confusion_matrix.png'))
+    plt.savefig(os.path.join(save_dir, f'{model_name}_confusion_matrix.png'))
     plt.close()
     
     # Générer le rapport de classification
     report = classification_report(all_labels, all_preds, target_names=class_names, output_dict=True)
     
     # Sauvegarder le rapport
-    with open(os.path.join(save_dir, 'classification_report.json'), 'w') as f:
+    with open(os.path.join(save_dir, f'{model_name}_classification_report.json'), 'w') as f:
         json.dump(report, f, indent=4)
     
     # Visualiser les métriques par classe
@@ -267,7 +271,7 @@ def evaluate_model(model, test_loader, criterion, device, class_names, save_dir=
     plt.xticks(x, classes, rotation=45)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'metrics_by_class.png'))
+    plt.savefig(os.path.join(save_dir, f'{model_name}_metrics_by_class.png'))
     plt.close()
     
     return {
@@ -277,13 +281,14 @@ def evaluate_model(model, test_loader, criterion, device, class_names, save_dir=
         'classification_report': report
     }
 
-def plot_training_history(history, save_dir='models'):
+def plot_training_history(history, save_dir='models', model_name="model"):
     """
     Trace les courbes d'entraînement.
     
     Args:
         history (dict): Historique d'entraînement
         save_dir (str): Répertoire où sauvegarder les graphiques
+        model_name (str): Préfixe pour les noms de fichiers sauvegardés
     """
     # Créer le répertoire de sauvegarde s'il n'existe pas
     os.makedirs(save_dir, exist_ok=True)
@@ -310,7 +315,7 @@ def plot_training_history(history, save_dir='models'):
     plt.title('Évolution de l\'accuracy')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'training_curves.png'))
+    plt.savefig(os.path.join(save_dir, f'{model_name}_training_curves.png'))
     plt.close()
     
     # Tracer l'évolution du learning rate
@@ -320,22 +325,18 @@ def plot_training_history(history, save_dir='models'):
     plt.ylabel('Learning Rate')
     plt.title('Évolution du Learning Rate')
     plt.yscale('log')
-    plt.savefig(os.path.join(save_dir, 'learning_rate.png'))
+    plt.savefig(os.path.join(save_dir, f'{model_name}_learning_rate.png'))
     plt.close()
 
 def main():
     """
-    Fonction principale pour l'entraînement du modèle.
+    Fonction principale pour l'entraînement du modèle en deux étapes.
     """
     # Parser les arguments
-    parser = argparse.ArgumentParser(description='Entraînement du classificateur de prunes')
-    parser.add_argument('--data_dir', type=str, required=True, help='Chemin vers le répertoire de données')
+    parser = argparse.ArgumentParser(description='Entraînement du modèle en deux étapes pour les prunes')
+    parser.add_argument('--plum_data_dir', type=str, required=True, help='Chemin vers le répertoire de données de prunes')
+    parser.add_argument('--non_plum_data_dir', type=str, required=True, help='Chemin vers le répertoire de données qui ne sont pas des prunes')
     parser.add_argument('--save_dir', type=str, default='models', help='Chemin pour sauvegarder les modèles')
-    parser.add_argument('--model_type', type=str, default='standard', choices=['standard', 'lightweight'], 
-                        help='Type de modèle à utiliser')
-    parser.add_argument('--base_model', type=str, default='resnet18', 
-                        choices=['resnet18', 'resnet50', 'mobilenet_v2', 'efficientnet_b0'], 
-                        help='Modèle de base à utiliser (pour le type standard)')
     parser.add_argument('--batch_size', type=int, default=32, help='Taille des batches')
     parser.add_argument('--num_epochs', type=int, default=25, help='Nombre d\'époques')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate initial')
@@ -356,93 +357,167 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Utilisation de: {device}")
     
-    # Analyser la distribution des classes
-    print("Analyse de la distribution des classes...")
-    class_counts, dist_plot = analyze_dataset_distribution(args.data_dir)
-    print(f"Distribution des classes: {class_counts}")
+    # Charger et préparer les données pour les deux étapes
+    print("Chargement des données pour les deux étapes...")
+    (detection_train_loader, detection_val_loader, detection_test_loader, detection_class_names), \
+    (classification_train_loader, classification_val_loader, classification_test_loader, classification_class_names) = \
+        load_and_prepare_two_stage_data(
+            args.plum_data_dir, 
+            args.non_plum_data_dir,
+            batch_size=args.batch_size, 
+            img_size=args.img_size,
+            num_workers=args.num_workers
+        )
     
-    # Charger et préparer les données
-    print("Chargement des données...")
-    train_loader, val_loader, test_loader, class_names = load_and_prepare_data(
-        args.data_dir, 
-        batch_size=args.batch_size, 
-        img_size=args.img_size,
-        num_workers=args.num_workers
+    print(f"Classes de détection: {detection_class_names}")
+    print(f"Classes de classification: {classification_class_names}")
+    
+    # Visualiser un batch pour chaque étape
+    print("Visualisation d'un batch d'images pour la détection...")
+    detection_batch_viz = visualize_batch(detection_train_loader, detection_class_names)
+    
+    print("Visualisation d'un batch d'images pour la classification...")
+    classification_batch_viz = visualize_batch(classification_train_loader, classification_class_names)
+    
+    # Étape 1: Entraîner le modèle de détection
+    print("\n=== Entraînement du modèle de détection ===\n")
+    
+    # Créer le modèle de détection
+    detection_model = get_model(
+        model_name='lightweight', 
+        num_classes=len(detection_class_names), 
+        base_model='mobilenet_v2', 
+        pretrained=True
     )
     
-    # Visualiser un batch
-    print("Visualisation d'un batch d'images...")
-    batch_viz = visualize_batch(train_loader, class_names)
-    
-    # Créer le modèle
-    print(f"Création du modèle {args.model_type} avec base {args.base_model if args.model_type == 'standard' else 'mobilenet_v2'}...")
-    if args.model_type == 'standard':
-        model = get_model(
-            model_name=args.model_type, 
-            num_classes=len(class_names), 
-            base_model=args.base_model, 
-            pretrained=True
-        )
-    else:
-        model = get_model(
-            model_name=args.model_type, 
-            num_classes=len(class_names), 
-            pretrained=True
-        )
-    
     # Déplacer le modèle sur le device
-    model = model.to(device)
+    detection_model = detection_model.to(device)
     
     # Définir la fonction de perte et l'optimiseur
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    detection_criterion = nn.CrossEntropyLoss()
+    detection_optimizer = optim.Adam(detection_model.parameters(), lr=args.learning_rate)
     
     # Scheduler pour ajuster le learning rate
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+    detection_scheduler = ReduceLROnPlateau(detection_optimizer, mode='min', factor=0.1, patience=3, verbose=True)
     
-    # Entraîner le modèle
-    print("Début de l'entraînement...")
-    history = train_model(
-        model, 
-        train_loader, 
-        val_loader, 
-        criterion, 
-        optimizer, 
-        scheduler, 
+    # Entraîner le modèle de détection
+    detection_history = train_model(
+        detection_model, 
+        detection_train_loader, 
+        detection_val_loader, 
+        detection_criterion, 
+        detection_optimizer, 
+        detection_scheduler, 
         device, 
         num_epochs=args.num_epochs, 
-        save_dir=args.save_dir
+        save_dir=args.save_dir,
+        model_name="detection"
     )
     
     # Tracer les courbes d'entraînement
-    print("Génération des courbes d'entraînement...")
-    plot_training_history(history, save_dir=args.save_dir)
+    plot_training_history(detection_history, save_dir=args.save_dir, model_name="detection")
     
     # Charger le meilleur modèle (selon l'accuracy)
-    print("Chargement du meilleur modèle...")
-    model.load_state_dict(torch.load(os.path.join(args.save_dir, 'best_model_acc.pth')))
+    detection_model.load_state_dict(torch.load(os.path.join(args.save_dir, 'detection_best_acc.pth')))
     
-    # Évaluer le modèle
-    print("Évaluation du modèle sur l'ensemble de test...")
-    metrics = evaluate_model(model, test_loader, criterion, device, class_names, save_dir=args.save_dir)
+    # Évaluer le modèle de détection
+    detection_metrics = evaluate_model(
+        detection_model, 
+        detection_test_loader, 
+        detection_criterion, 
+        device, 
+        detection_class_names, 
+        save_dir=args.save_dir,
+        model_name="detection"
+    )
     
-    # Afficher les métriques finales
-    print(f"Métriques finales:")
-    print(f"  - Accuracy: {metrics['test_acc']:.4f}")
-    print(f"  - Loss: {metrics['test_loss']:.4f}")
+    # Étape 2: Entraîner le modèle de classification
+    print("\n=== Entraînement du modèle de classification ===\n")
+    
+    # Créer le modèle de classification
+    classification_model = get_model(
+        model_name='standard', 
+        num_classes=len(classification_class_names), 
+        base_model='resnet18', 
+        pretrained=True
+    )
+    
+    # Déplacer le modèle sur le device
+    classification_model = classification_model.to(device)
+    
+    # Définir la fonction de perte et l'optimiseur
+    classification_criterion = nn.CrossEntropyLoss()
+    classification_optimizer = optim.Adam(classification_model.parameters(), lr=args.learning_rate)
+    
+    # Scheduler pour ajuster le learning rate
+    classification_scheduler = ReduceLROnPlateau(classification_optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+    
+    # Entraîner le modèle de classification
+    classification_history = train_model(
+        classification_model, 
+        classification_train_loader, 
+        classification_val_loader, 
+        classification_criterion, 
+        classification_optimizer, 
+        classification_scheduler, 
+        device, 
+        num_epochs=args.num_epochs, 
+        save_dir=args.save_dir,
+        model_name="classification"
+    )
+    
+    # Tracer les courbes d'entraînement
+    plot_training_history(classification_history, save_dir=args.save_dir, model_name="classification")
+    
+    # Charger le meilleur modèle (selon l'accuracy)
+    classification_model.load_state_dict(torch.load(os.path.join(args.save_dir, 'classification_best_acc.pth')))
+    
+    # Évaluer le modèle de classification
+    classification_metrics = evaluate_model(
+        classification_model, 
+        classification_test_loader, 
+        classification_criterion, 
+        device, 
+        classification_class_names, 
+        save_dir=args.save_dir,
+        model_name="classification"
+    )
+    
+    # Créer le modèle en deux étapes
+    two_stage_model = get_two_stage_model(
+        detection_model_name='lightweight',
+        classification_model_name='standard',
+        detection_base_model='mobilenet_v2',
+        classification_base_model='resnet18',
+        num_detection_classes=len(detection_class_names),
+        num_classification_classes=len(classification_class_names),
+        pretrained=False,  # Nous utilisons nos propres poids entraînés
+        detection_threshold=0.7
+    )
+    
+    # Charger les poids entraînés
+    two_stage_model.detection_model.load_state_dict(torch.load(os.path.join(args.save_dir, 'detection_best_acc.pth')))
+    two_stage_model.classification_model.load_state_dict(torch.load(os.path.join(args.save_dir, 'classification_best_acc.pth')))
     
     # Sauvegarder les informations du modèle
-    model_info = model.get_model_info()
-    model_info.update({
-        'img_size': args.img_size,
-        'class_names': class_names,
-        'metrics': metrics
-    })
+    model_info = {
+        "detection_class_names": detection_class_names,
+        "classification_class_names": classification_class_names,
+        "img_size": args.img_size,
+        "detection_metrics": detection_metrics,
+        "classification_metrics": classification_metrics,
+        "detection_model_info": two_stage_model.detection_model.get_model_info(),
+        "classification_model_info": two_stage_model.classification_model.get_model_info(),
+        "detection_threshold": two_stage_model.detection_threshold
+    }
     
-    with open(os.path.join(args.save_dir, 'model_info.json'), 'w') as f:
+    with open(os.path.join(args.save_dir, 'two_stage_model_info.json'), 'w') as f:
         json.dump(model_info, f, indent=4)
     
-    print(f"Entraînement et évaluation terminés. Résultats sauvegardés dans {args.save_dir}")
+    print("\n=== Entraînement terminé ===\n")
+    print(f"Modèle en deux étapes entraîné et sauvegardé dans {args.save_dir}")
+    print(f"Métriques de détection: Accuracy={detection_metrics['test_acc']:.4f}")
+    print(f"Métriques de classification: Accuracy={classification_metrics['test_acc']:.4f}")
 
 if __name__ == '__main__':
     main()
