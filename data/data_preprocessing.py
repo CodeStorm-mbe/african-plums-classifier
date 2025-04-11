@@ -134,30 +134,54 @@ def load_and_prepare_two_stage_data(plum_data_dir, non_plum_data_dir, batch_size
     if not os.path.exists(non_plum_data_dir):
         raise FileNotFoundError(f"Le répertoire {non_plum_data_dir} n'existe pas")
     
-    # Créer un dataset temporaire pour la détection (prune vs non-prune)
+    # Vérifier que plum_data_dir contient des sous-dossiers de classes
+    class_dirs = [d for d in os.listdir(plum_data_dir) if os.path.isdir(os.path.join(plum_data_dir, d))]
+    if not class_dirs:
+        raise ValueError(f"Aucun sous-dossier de classe trouvé dans {plum_data_dir}. Vérifiez la structure du répertoire.")
+    print(f"Sous-dossiers trouvés dans {plum_data_dir}: {class_dirs}")
+    
+    # Créer un dossier temporaire pour la détection (prune vs non-prune)
     detection_data_dir = "/tmp/detection_data"
     os.makedirs(detection_data_dir, exist_ok=True)
     os.makedirs(os.path.join(detection_data_dir, "plum"), exist_ok=True)
     os.makedirs(os.path.join(detection_data_dir, "non_plum"), exist_ok=True)
     
-    # Copier quelques images pour la détection
+    # Copier les images de prunes
+    plum_image_count = 0
     for plum_class in os.listdir(plum_data_dir):
         plum_class_dir = os.path.join(plum_data_dir, plum_class)
         if os.path.isdir(plum_class_dir):
-            for img_file in os.listdir(plum_class_dir)[:100]:  # Limiter à 100 images par classe
+            for img_file in os.listdir(plum_class_dir):
                 img_path = os.path.join(plum_class_dir, img_file)
-                if os.path.isfile(img_path):
-                    img = Image.open(img_path)
-                    img.save(os.path.join(detection_data_dir, "plum", f"{plum_class}_{img_file}"))
+                if os.path.isfile(img_path) and img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                    try:
+                        img = Image.open(img_path).convert('RGB')
+                        img.save(os.path.join(detection_data_dir, "plum", f"{plum_class}_{img_file}"))
+                        plum_image_count += 1
+                    except Exception as e:
+                        print(f"Erreur lors de la copie de {img_path}: {e}")
     
-    for non_plum_class in os.listdir(non_plum_data_dir):
-        non_plum_class_dir = os.path.join(non_plum_data_dir, non_plum_class)
-        if os.path.isdir(non_plum_class_dir):
-            for img_file in os.listdir(non_plum_class_dir)[:100]:  # Limiter à 100 images par classe
-                img_path = os.path.join(non_plum_class_dir, img_file)
-                if os.path.isfile(img_path):
-                    img = Image.open(img_path)
-                    img.save(os.path.join(detection_data_dir, "non_plum", f"{non_plum_class}_{img_file}"))
+    print(f"Nombre d'images de prunes copiées: {plum_image_count}")
+    if plum_image_count == 0:
+        raise ValueError(f"Aucune image valide trouvée dans {plum_data_dir}. Vérifiez le dossier et les extensions des fichiers.")
+    
+    # Copier les images non-plum depuis non_plum_data_dir/non_plum
+    non_plum_dir = os.path.join(non_plum_data_dir, "non_plum")
+    non_plum_image_count = 0
+    if os.path.isdir(non_plum_dir):
+        for img_file in os.listdir(non_plum_dir):
+            img_path = os.path.join(non_plum_dir, img_file)
+            if os.path.isfile(img_path) and img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                try:
+                    img = Image.open(img_path).convert('RGB')
+                    img.save(os.path.join(detection_data_dir, "non_plum", img_file))
+                    non_plum_image_count += 1
+                except Exception as e:
+                    print(f"Erreur lors de la copie de {img_path}: {e}")
+    
+    print(f"Nombre d'images non-plum copiées: {non_plum_image_count}")
+    if non_plum_image_count == 0:
+        raise ValueError(f"Aucune image valide trouvée dans {non_plum_dir}. Vérifiez le dossier et les extensions des fichiers.")
     
     # Charger les données pour la détection
     detection_loaders = load_and_prepare_data(
