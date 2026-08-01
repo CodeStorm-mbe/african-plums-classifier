@@ -63,8 +63,8 @@ Le projet est organisé en trois modules principaux :
 
 1. Clonez ce dépôt :
    ```bash
-   git clone https://github.com/votre-utilisateur/plum-classification.git
-   cd plum-classification
+   git clone https://github.com/CodeStorm-mbe/african-plums-classifier.git
+   cd african-plums-classifier
    ```
 
 2. Installez les dépendances :
@@ -163,16 +163,36 @@ print(f"Est une prune: {'Oui' if results['est_prune'] else 'Non'}")
 
 ## Performances
 
-Le modèle atteint généralement une précision de 92-95% sur l'ensemble de test, avec des performances variables selon les catégories :
+**Aucune performance n'est publiée à ce jour.** Le dépôt ne contient ni poids
+entraînés, ni métriques, ni matrice de confusion : rien ne permet aujourd'hui de
+vérifier ce que ce modèle vaut.
 
-- Bonne qualité : 96-98% de précision
-- Non mûre : 94-96% de précision
-- Tachetée : 90-93% de précision
-- Fissurée : 92-95% de précision
-- Meurtrie : 88-92% de précision
-- Pourrie : 93-96% de précision
+Ce que l'on sait de l'unique exécution conservée (JCIA Hackathon 2025, Colab) :
+l'entraînement s'est arrêté sur early stopping avec un **`val_loss` de 1.043**.
+Sur six classes équiprobables, le hasard vaut ln(6) ≈ 1.79 — le modèle apprend
+donc quelque chose, mais aucune exactitude n'a été relevée et ce chiffre ne dit
+rien de la performance en test.
 
-L'utilisation de la validation croisée, du TTA et de l'ensemble de modèles améliore généralement les performances de 2-4% par rapport au modèle de base.
+Une version antérieure de ce fichier annonçait 92–95 % d'exactitude et un
+détail par classe. Ces valeurs n'ont jamais été mesurées ; elles ont été
+retirées.
+
+### Produire des chiffres vérifiables
+
+`colab_training_pipeline.ipynb` exécute le pipeline puis écrit
+`results/metrics.json` (exactitude, précision, rappel, F1, matrice de confusion,
+rapport par classe) et `results/confusion_matrix.png`. Ces deux fichiers sont à
+committer : tant qu'ils sont absents, ce dépôt est du code sans résultat.
+
+Le tableau ci-dessous est à remplir à partir de `results/metrics.json`, avec la
+baseline mesurée d'abord — sans point de comparaison, un score isolé ne veut
+rien dire.
+
+| Configuration | Exactitude | F1 (macro) |
+|---|---|---|
+| Baseline (EfficientNet-B4, sans TTA ni ensemble) | à mesurer | à mesurer |
+| + TTA | à mesurer | à mesurer |
+| + validation croisée 5-fold et ensemble | à mesurer | à mesurer |
 
 ## Exportation du modèle
 
